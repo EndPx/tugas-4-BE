@@ -145,7 +145,7 @@ const loginHandler = async (req,res,next)=>{
 
   } catch (error) {
     res.status(error.statusCode || 500).json({
-      status: "errorr",
+      status: "error",
       message: error.message
     })
   }
@@ -267,66 +267,108 @@ const getUserByToken = async(req,res,next)=>{
 }
 
 //edit user account (fullname, angkatan, nim, profilepicture/image)
-const editUserAccount = async(req,res,next)=>{
+const editUserAccount = async (req, res, next) => {
   try {
-    //ekstak tokennya
     const authorization = req.headers.authorization;
     let token;
-    if(authorization !== null && authorization.startsWith("Bearer ")){
-      token = authorization.substring(7);
-    }else{
+    if (!authorization || !authorization.startsWith("Bearer ")) {
       const error = new Error("You need to login");
-      error.statusCode(403);
+      error.statusCode = 403;
       throw error;
     }
+
+    token = authorization.substring(7);
     const decoded = jwt.verify(token, key);
 
-    //cari usernya
     const currentUser = await User.findOne({
-      where:{
-        id: decoded.userId
+      where: {
+        id: decoded.userId,
+      },
+      include: {
+        model: Division,
+        attributes: ['name']
       }
-    })
-    if(!currentUser){
-      const error = new Error(`User with id ${id} not exist!`);
+    });
+
+    if (!currentUser) {
+      const error = new Error(`User with id ${decoded.userId} not exist!`);
       error.statusCode = 400;
       throw error;
     }
+
     let imageUrl;
-    //proses datanya
-    if(req.file){
+    if (req.file) {
       const file = req.file;
-      
-      const uploadOption = {
-        folder: 'Profile_Member/',
-        public_id: `user_${currentUser.id}`,
-        overwrite: true
+
+      const uploadOption={
+        folder:'test/',
+        public_id:`user_${currentUser.id}`,
+        overWrite:true
       }
-      
-      const uploadFile = await cloudinary.uploader.upload
-      (file.path, uploadOption);
-
-      //didapat image URL
-      imageUrl = uploadFile.secure_url;
-
-      //image url bakal diupdate kedalam database user bersangkutan
-      
-
-      //ngehapus file yang diupload didalam dir lokal
+      const uploadFile=await cloudinary.uploader.upload(file.path,uploadOption)
+      imageUrl=uploadFile.secure_url
+      //menghapus file yang diupload dalam local
       fs.unlinkSync(file.path);
+      currentUser.profilePicture=imageUrl;
     }
 
+    if (req.body.fullName){
+      currentUser.fullName=req.body.fullName;
+    }
+
+    if (req.body.nim){
+      currentUser.nim=req.body.nim;
+    }
+
+    if (req.body.password){
+      const hashedPassword=await bcrypt.hash(req.body.password, 5);
+      currentUser.password=hashedPassword;
+    }
+
+    if (req.body.angkatan){
+      currentUser.angkatan=req.body.angkatan;
+    }
+
+    if (req.body.divisi){
+      const current_division=await Division.findOne({
+        where:{
+          name:req.body.divisi
+        }
+      });
+      if(current_division == undefined){
+        const error = new Error(`division ${req.body.divisi} is not existed!`);
+        error.statusCode = 400;
+        throw error;
+      }
+
+      currentUser.divisionId=current_division.id;
+      currentUser.division.name=current_division.name;
+    }
+
+    await currentUser.save();
+
     res.status(200).json({
-      status: "TESTING",
-      imageUrl: imageUrl
-    })
+      status: "Success",
+      message:"Succesfully edit user data",
+      user:{
+        id:currentUser.id,
+        fullname:currentUser.fullName,
+        nim:currentUser.nim,
+        angkatan:currentUser.angkatan,
+        profilePicture:currentUser.profilePicture,
+        division:{
+          name: currentUser.division.name
+        }
+      }
+    });
+    
   } catch (error) {
     res.status(error.statusCode || 500).json({
       status: "Error",
       message: error.message
-    })
+    });
   }
-}
+};
 
 module.exports = {
   getAllUser, getUserById, postUser, deleteUser, loginHandler, getUserByToken,
